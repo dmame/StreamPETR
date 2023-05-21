@@ -10,6 +10,10 @@
 #  Modified by Shihao Wang
 # ------------------------------------------------------------------------
 import numpy as np
+import mmcv
+import pyquaternion
+from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
+from nuscenes.utils.data_classes import Box as NuScenesBox
 from mmdet.datasets import DATASETS
 from mmdet3d.datasets import NuScenesDataset
 from mmdet.datasets import DATASETS
@@ -25,6 +29,11 @@ class CustomNuScenesDataset(NuScenesDataset):
 
     This datset only add camera intrinsics and extrinsics to the results.
     """
+    
+    OCCUPANCY_CLASSES = ['others','barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
+                            'motorcycle', 'pedestrian', 'traffic_cone', 'trailer', 'truck',
+                            'driveable_surface', 'other_flat', 'sidewalk',
+                            'terrain', 'manmade', 'vegetation','free']
 
     def __init__(self, collect_keys, seq_mode=False, seq_split_num=1, num_frame_losses=1, queue_length=8, random_length=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -255,6 +264,112 @@ class CustomNuScenesDataset(NuScenesDataset):
                 idx = self._rand_another(idx)
                 continue
             return data
+        
+    def format_to_ego(self, results, jsonfile_prefix=None):
+        
+        mapped_class_names = self.CLASSES
+
+        print('Start to convert detection format...')
+
+        for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
+            
+            pts_box_det = det['pts_bbox']
+            boxes = output_to_nusc_box(pts_box_det, self.with_velocity)
+            
+            pred_boxes_cls_score = det['bbox_all_cls_score_results']
+            boxes, pred_boxes_cls_score = lidar_nusc_box_to_ego(self.data_infos[sample_id], boxes, pred_boxes_cls_score,
+                                             mapped_class_names,
+                                             self.eval_detection_configs,
+                                             self.eval_version)
+            
+            boxes_in_ego = []
+            for i, box in enumerate(boxes):
+                boxes_in_ego.append([box.center[0], box.center[1], box.center[2], 
+                                        box.wlh[1], box.wlh[0], box.wlh[2],
+                                        quaternion_yaw(box.orientation), self.OCCUPANCY_CLASSES.index(mapped_class_names[box.label]), box.score])
+        
+            
+            pred_boxes = np.array(boxes_in_ego)
+            
+            
+            # print(pred_boxes.shape, type(pred_boxes_cls_score), pred_boxes_cls_score.shape)
+            token = self.data_infos[sample_id]['token']
+            # np.save("petr_pred_"+str(sample_id), pred_boxes)
+            # np.save("petr_pred_all_cls_score_"+str(sample_id), pred_boxes_cls_score.cpu().numpy())
+            
+            np.save("petr_pred_"+token, pred_boxes)
+            np.save("petr_pred_all_cls_score_"+token, pred_boxes_cls_score.cpu().numpy())
+
+def output_to_nusc_box(detection, with_velocity=True):
+    """Convert the output to the box class in the nuScenes.
+
+    Args:
+        detection (dict): Detection results.
+
+            - boxes_3d (:obj:`BaseInstance3DBoxes`): Detection bbox.
+            - scores_3d (torch.Tensor): Detection scores.
+            - labels_3d (torch.Tensor): Predicted box labels.
+
+    Returns:
+        list[:obj:`NuScenesBox`]: List of standard NuScenesBoxes.
+    """
+    box3d = detection['boxes_3d']
+    scores = detection['scores_3d'].numpy()
+    labels = detection['labels_3d'].numpy()
+
+    box_gravity_center = box3d.gravity_center.numpy()
+    box_dims = box3d.dims.numpy()
+    box_yaw = box3d.yaw.numpy()
+
+    # our LiDAR coordinate system -> nuScenes box coordinate system
+    nus_box_dims = box_dims[:, [1, 0, 2]]
+
+    box_list = []
+    for i in range(len(box3d)):
+        quat = pyquaternion.Quaternion(axis=[0, 0, 1], radians=box_yaw[i])
+        if with_velocity:
+            velocity = (*box3d.tensor[i, 7:9], 0.0)
+        else:
+            velocity = (0, 0, 0)
+        # velo_val = np.linalg.norm(box3d[i, 7:9])
+        # velo_ori = box3d[i, 6]
+        # velocity = (
+        # velo_val * np.cos(velo_ori), velo_val * np.sin(velo_ori), 0.0)
+        box = NuScenesBox(
+            box_gravity_center[i],
+            nus_box_dims[i],
+            quat,
+            label=labels[i],
+            score=scores[i],
+            velocity=velocity)
+        box_list.append(box)
+    return box_list
+
+
+def lidar_nusc_box_to_ego(info,
+                            boxes,
+                            pred_boxes_cls_score,
+                            classes,
+                            eval_configs,
+                            eval_version='detection_cvpr_2019'):
+
+    box_list = []
+    cls_score_mask = torch.zeros((pred_boxes_cls_score.shape[0]), dtype=torch.bool)
+    for i in range(len(boxes)):
+        box = boxes[i]
+        # Move box to ego vehicle coord system
+        box.rotate(pyquaternion.Quaternion(info['lidar2ego_rotation']))
+        box.translate(np.array(info['lidar2ego_translation']))
+        # filter det in ego.
+        cls_range_map = eval_configs.class_range
+        radius = np.linalg.norm(box.center[:2], 2)
+        det_range = cls_range_map[classes[box.label]]
+        if radius > det_range:
+            continue
+        box_list.append(box)
+        cls_score_mask[i] = True
+        
+    return box_list, pred_boxes_cls_score[cls_score_mask]
 
 def invert_matrix_egopose_numpy(egopose):
     """ Compute the inverse transformation of a 4x4 egopose numpy matrix."""

@@ -55,6 +55,7 @@ class NMSFreeCoder(BaseBBoxCoder):
         labels = indexs % self.num_classes
         bbox_index = torch.div(indexs, self.num_classes, rounding_mode='floor')
         bbox_preds = bbox_preds[bbox_index]
+        final_cls_scores = cls_scores[bbox_index]
 
         final_box_preds = denormalize_bbox(bbox_preds, self.pc_range)   
         final_scores = scores 
@@ -77,10 +78,12 @@ class NMSFreeCoder(BaseBBoxCoder):
             boxes3d = final_box_preds[mask]
             scores = final_scores[mask]
             labels = final_preds[mask]
+            out_cls_scores = final_cls_scores[mask]
             predictions_dict = {
                 'bboxes': boxes3d,
                 'scores': scores,
-                'labels': labels
+                'labels': labels,
+                "all_cls_scores": out_cls_scores
             }
 
         else:

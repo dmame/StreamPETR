@@ -1035,4 +1035,7 @@ class StreamPETRHead(AnchorFreeHead):
             scores = preds['scores']
             labels = preds['labels']
             ret_list.append([bboxes, scores, labels])
+            
+            if 'all_cls_scores' in preds:
+                ret_list[-1].append(preds['all_cls_scores'])
         return ret_list

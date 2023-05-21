@@ -137,6 +137,9 @@ class FocalHead(AnchorFreeHead):
         nn.init.constant_(self.cls.bias, bias_init)
         nn.init.constant_(self.centerness.bias, bias_init)
 
+    def get_bboxes(self, preds_dicts, img_metas, rescale=False):
+        pass
+    
     def forward(self, location, **data):
         src = data['img_feats']
         bs, n, c, h, w= src.shape

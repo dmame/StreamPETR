@@ -3,6 +3,9 @@
 # ---------------------------------------------
 #  Modified by Zhiqi Li
 # ---------------------------------------------
+import sys
+sys.path.append("/home/QJ00367/danjiao/dlnets/StreamPETR")
+
 import argparse
 import mmcv
 import os
@@ -14,7 +17,8 @@ from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 
-from mmdet3d.apis import single_gpu_test
+# from mmdet3d.apis import single_gpu_test
+from projects.mmdet3d_plugin.core.apis import single_gpu_test
 from mmdet3d.datasets import build_dataset
 from projects.mmdet3d_plugin.datasets.builder import build_dataloader
 from mmdet3d.models import build_model
@@ -44,7 +48,7 @@ def parse_args():
     parser.add_argument(
         '--eval',
         type=str,
-        nargs='+',
+        default='bbox',
         help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
         ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
     parser.add_argument('--show', action='store_true', help='show results')
@@ -103,6 +107,10 @@ def parse_args():
     if args.options:
         warnings.warn('--options is deprecated in favor of --eval-options')
         args.eval_options = args.options
+        
+    # args.config = "projects/configs/StreamPETR/stream_petr_vov_flash_800_bs2_seq_24e.py"
+    # args.checkpoint = "ckpts/stream_petr_vov_flash_800_bs2_seq_24e.pth"
+    
     return args
 
 
@@ -221,9 +229,9 @@ def main():
         model.PALETTE = dataset.PALETTE
 
     if not distributed:
-        assert False
-        # model = MMDataParallel(model, device_ids=[0])
-        # outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
+        # assert False
+        model = MMDataParallel(model, device_ids=[0])
+        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
@@ -241,6 +249,8 @@ def main():
         kwargs = {} if args.eval_options is None else args.eval_options
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
+        
+        # dataset.format_to_ego(outputs, **kwargs)
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
 
@@ -258,5 +268,5 @@ def main():
 
 
 if __name__ == '__main__':
-    torch.multiprocessing.set_start_method('fork')
+    # torch.multiprocessing.set_start_method('fork')
     main()
