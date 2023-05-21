@@ -6,6 +6,7 @@ from typing import List, Tuple, Union
 
 import mmcv
 import numpy as np
+import torch
 from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.geometry_utils import view_points
 from pyquaternion import Quaternion
@@ -588,7 +589,7 @@ def get_2d_boxes(nusc,
 
             center3d = np.array(loc).reshape([1, 3])
             center2d = points_cam2img(
-                center3d, camera_intrinsic, with_depth=True)
+                torch.from_numpy(center3d), torch.from_numpy(camera_intrinsic), with_depth=True)
             repro_rec['center2d'] = center2d.squeeze().tolist()
             # normalized center2D + depth
             # if samples with depth < 0 will be removed
