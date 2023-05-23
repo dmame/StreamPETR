@@ -16,6 +16,7 @@ from mmdet.datasets import DATASETS
 import torch
 import numpy as np
 from nuscenes.eval.common.utils import Quaternion
+import mmcv
 from mmcv.parallel import DataContainer as DC
 import random
 import math
@@ -39,6 +40,39 @@ class CustomNuScenesDataset(NuScenesDataset):
             self.seq_split_num = seq_split_num
             self.random_length = 0
             self._set_sequence_group_flag() # Must be called after load_annotations b/c load_annotations does sorting.
+            
+    def load_annotations(self, ann_file):
+        """Load annotations from ann_file.
+
+        Args:
+            ann_file (str): Path of the annotation file.
+
+        Returns:
+            list[dict]: List of annotations sorted by timestamps.
+        """
+        
+        if ann_file is list:
+            print('trainval training!!!!!!!!!!!!!!!!!!!!')
+            train =  mmcv.load(ann_file[0])
+            train = list(sorted(train['infos'], key=lambda e: e['timestamp']))
+
+            val = mmcv.load(ann_file[1])
+            val = list(sorted(val['infos'], key=lambda e: e['timestamp']))
+
+            total = train + val
+            data_infos = total[::self.load_interval]
+            self.metadata = data['metadata']
+            self.version = self.metadata['version']
+            return data_infos
+        
+        data = mmcv.load(ann_file)
+        # self.train_split=data['train_split']
+        # self.val_split=data['val_split']
+        data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
+        data_infos = data_infos[::self.load_interval]
+        self.metadata = data['metadata']
+        self.version = self.metadata['version']
+        return data_infos
 
     def _set_sequence_group_flag(self):
         """

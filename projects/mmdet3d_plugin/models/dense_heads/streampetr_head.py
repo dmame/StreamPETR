@@ -839,8 +839,14 @@ class StreamPETRHead(AnchorFreeHead):
         isnotnan = torch.isfinite(normalized_bbox_targets).all(dim=-1)
         bbox_weights = bbox_weights * self.code_weights
 
-        loss_bbox = self.loss_bbox(
-                bbox_preds[isnotnan, :10], normalized_bbox_targets[isnotnan, :10], bbox_weights[isnotnan, :10], avg_factor=num_total_pos)
+        if normalized_bbox_targets[isnotnan, :10].numel() == 0:
+            # loss_bbox = torch.zeros_like(bbox_preds[isnotnan, :10])
+            
+            loss_bbox = torch.abs(bbox_preds[isnotnan, :10] - normalized_bbox_targets[isnotnan, :10])
+            print(" zero targets ", loss_bbox.shape, normalized_bbox_targets.shape, normalized_bbox_targets[0, :10], bbox_targets[0, :10], len(gt_bboxes_list), gt_bboxes_list[0])
+        else:
+            loss_bbox = self.loss_bbox(
+                    bbox_preds[isnotnan, :10], normalized_bbox_targets[isnotnan, :10], bbox_weights[isnotnan, :10], avg_factor=num_total_pos)
 
         loss_cls = torch.nan_to_num(loss_cls)
         loss_bbox = torch.nan_to_num(loss_bbox)
